@@ -14,10 +14,7 @@ class TerminateFlakyTest
     @iterations = options[:iterations] || DEFAULT_ITERATIONS
     @spec_pattern = options[:spec_pattern] || DEFAULT_SPEC_PATTERN
     @base_branch = options[:base_branch] || 'main'
-    @output_dir = options[:output_dir] || 'flaky_test_results'
     @verbose = options[:verbose] || false
-
-    FileUtils.mkdir_p(@output_dir)
   end
 
   def run
@@ -60,7 +57,6 @@ class TerminateFlakyTest
       end
     end
 
-    save_results(results, flaky_locations)
     print_summary(results, flaky_locations)
   end
 
@@ -157,28 +153,6 @@ class TerminateFlakyTest
     locations.uniq
   end
 
-  def save_results(results, flaky_locations)
-    timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
-    filename = File.join(@output_dir, "flaky_test_results_#{timestamp}.json")
-
-    # ファイルサイズを小さくするため、stdout と stderr は保存しない
-    compact_results = {}
-    results.each do |file, runs|
-      compact_results[file] = runs.map do |run|
-        run.except(:stdout, :stderr)
-      end
-    end
-
-    output = {
-      results: compact_results,
-      flaky_locations: flaky_locations
-    }
-
-    File.write(filename, JSON.pretty_generate(output))
-
-    puts "\nResults saved to #{filename}"
-  end
-
   def print_summary(results, flaky_locations)
     flaky_tests = []
 
@@ -229,10 +203,6 @@ OptionParser.new do |opts|
   opts.on('-p', '--pattern PATTERN',
           "Pattern to match spec files (default: #{TerminateFlakyTest::DEFAULT_SPEC_PATTERN})") do |pattern|
     options[:spec_pattern] = pattern
-  end
-
-  opts.on('-o', '--output-dir DIR', 'Directory to save results (default: flaky_test_results)') do |dir|
-    options[:output_dir] = dir
   end
 
   opts.on('-v', '--verbose', 'Show detailed error output for failed runs') do |v|

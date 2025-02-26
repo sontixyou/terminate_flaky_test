@@ -54,7 +54,6 @@ ruby flaky_test_detector.rb -v
 | `-i`, `--iterations N` | Number of times to run each test | 5 |
 | `-b`, `--base-branch BRANCH` | Base branch to compare against for finding changed files | main |
 | `-p`, `--pattern PATTERN` | Pattern to match spec files | _spec.rb |
-| `-o`, `--output-dir DIR` | Directory to save test results | flaky_test_results |
 | `-v`, `--verbose` | Show detailed error output for failed runs | false |
 | `-h`, `--help` | Show help message | - |
 
