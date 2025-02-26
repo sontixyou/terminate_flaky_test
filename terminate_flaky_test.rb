@@ -67,10 +67,8 @@ class TerminateFlakyTest
   private
 
   def find_changed_spec_files
-    puts @base_branch
     cmd = "git diff --name-only #{@base_branch} -- '**/*#{@spec_pattern}'"
     stdout, stderr, status = Open3.capture3(cmd)
-    puts stdout
 
     raise "Error getting changed files: #{stderr}" unless status.success?
 
