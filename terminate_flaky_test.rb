@@ -32,30 +32,45 @@ class TerminateFlakyTest
     changed_spec_files.each { |file| puts "  - #{file}" }
 
     results = {}
+    flaky_locations = {}
 
     changed_spec_files.each do |spec_file|
       puts "\nRunning #{spec_file} #{@iterations} times..."
       file_results = run_spec_multiple_times(spec_file)
       results[spec_file] = file_results
 
+      # 失敗した実行から場所の情報を抽出
+      failure_locations = extract_failure_locations(file_results)
+      flaky_locations[spec_file] = failure_locations if failure_locations.any?
+
       # 実行結果の分析
       failure_count = file_results.count { |r| !r[:success] }
       if failure_count.positive?
         puts "⚠️  FLAKY TEST DETECTED: #{spec_file} failed #{failure_count}/#{@iterations} runs"
+
+        # 失敗場所を表示
+        if failure_locations.any?
+          puts '   Failure locations:'
+          failure_locations.each do |location, count|
+            puts "     - #{location} (failed #{count} times)"
+          end
+        end
       else
         puts "✅ All runs passed for: #{spec_file}"
       end
     end
 
-    save_results(results)
-    print_summary(results)
+    save_results(results, flaky_locations)
+    print_summary(results, flaky_locations)
   end
 
   private
 
   def find_changed_spec_files
+    puts @base_branch
     cmd = "git diff --name-only #{@base_branch} -- '**/*#{@spec_pattern}'"
     stdout, stderr, status = Open3.capture3(cmd)
+    puts stdout
 
     raise "Error getting changed files: #{stderr}" unless status.success?
 
@@ -69,8 +84,9 @@ class TerminateFlakyTest
       print "  Run #{i + 1}/#{@iterations}: "
       start_time = Time.now
 
+      # RSpec実行結果を詳細に取得するためのフォーマット指定
       cmd = "bundle exec rspec #{spec_file} --format documentation"
-      _, stderr, status = Open3.capture3(cmd)
+      stdout, stderr, status = Open3.capture3(cmd)
 
       duration = Time.now - start_time
       success = status.success?
@@ -78,9 +94,11 @@ class TerminateFlakyTest
       print success ? '✓' : '✗'
       puts " (#{duration.round(2)}s)"
 
-      if @verbose && !success
-        puts '    Error output:'
-        stderr.split("\n").each { |line| puts "      #{line}" }
+      # エラー出力を保存
+      if (@verbose || !success) && !success
+        puts '    Error output:' if @verbose
+        error_lines = stderr.split("\n")
+        error_lines.each { |line| puts "      #{line}" } if @verbose
       end
 
       results << {
@@ -88,23 +106,82 @@ class TerminateFlakyTest
         success: success,
         duration: duration,
         exit_code: status.exitstatus,
-        timestamp: Time.now.iso8601
+        timestamp: Time.now.iso8601,
+        stdout: stdout,
+        stderr: stderr
       }
     end
 
     results
   end
 
-  def save_results(results)
+  def extract_failure_locations(file_results)
+    failure_locations = Hash.new(0)
+
+    file_results.each do |result|
+      next if result[:success]
+
+      # エラー出力から失敗箇所を抽出
+      locations = extract_locations_from_output(result[:stdout], result[:stderr])
+
+      locations.each do |location|
+        failure_locations[location] += 1
+      end
+    end
+
+    failure_locations
+  end
+
+  def extract_locations_from_output(stdout, stderr)
+    locations = []
+
+    # RSpec出力から失敗箇所を見つけるパターン
+    # 例: "./spec/models/user_spec.rb:25"
+    combined_output = "#{stdout}\n#{stderr}"
+
+    # 行番号を含むファイルパスを検索
+    location_patterns = [
+      %r{(?:\./)?([^:\s]+_spec\.rb):(\d+)}, # 標準的なRSpecの失敗出力パターン
+      /# ([^:\s]+):(\d+):/, # バックトレースからの行番号パターン
+      %r{Failure/Error: (.+?):(\d+)} # 別の失敗パターン
+    ]
+
+    location_patterns.each do |pattern|
+      combined_output.scan(pattern) do |file, line|
+        # フルパスを構築
+        locations << if file.start_with?('./')
+                     end
+        "#{file}:#{line}"
+      end
+    end
+
+    # 重複を削除
+    locations.uniq
+  end
+
+  def save_results(results, flaky_locations)
     timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
     filename = File.join(@output_dir, "flaky_test_results_#{timestamp}.json")
 
-    File.write(filename, JSON.pretty_generate(results))
+    # ファイルサイズを小さくするため、stdout と stderr は保存しない
+    compact_results = {}
+    results.each do |file, runs|
+      compact_results[file] = runs.map do |run|
+        run.except(:stdout, :stderr)
+      end
+    end
+
+    output = {
+      results: compact_results,
+      flaky_locations: flaky_locations
+    }
+
+    File.write(filename, JSON.pretty_generate(output))
 
     puts "\nResults saved to #{filename}"
   end
 
-  def print_summary(results)
+  def print_summary(results, flaky_locations)
     flaky_tests = []
 
     results.each do |file, runs|
@@ -113,7 +190,8 @@ class TerminateFlakyTest
 
       flaky_tests << {
         file: file,
-        failure_rate: (failure_count.to_f / @iterations * 100).round(2)
+        failure_rate: (failure_count.to_f / @iterations * 100).round(2),
+        locations: flaky_locations[file] || {}
       }
     end
 
@@ -125,6 +203,13 @@ class TerminateFlakyTest
     puts "\nFlaky tests:"
     flaky_tests.sort_by { |t| -t[:failure_rate] }.each do |test|
       puts "  - #{test[:file]} (#{test[:failure_rate]}% failure rate)"
+
+      next unless test[:locations].any?
+
+      puts '    Failure locations:'
+      test[:locations].sort_by { |_, count| -count }.each do |location, count|
+        puts "      - #{location} (failed #{count} times)"
+      end
     end
   end
 end
@@ -132,9 +217,10 @@ end
 # コマンドラインオプションの処理
 options = {}
 OptionParser.new do |opts|
-  opts.banner = 'Usage: ruby rspec_rerunner.rb [options]'
+  opts.banner = 'Usage: ruby flaky_test_detector.rb [options]'
 
-  opts.on('-i', '--iterations N', Integer, 'Number of times to run each spec (default: 5)') do |n|
+  opts.on('-i', '--iterations N', Integer,
+          "Number of times to run each spec (default: #{TerminateFlakyTest::DEFAULT_ITERATIONS})") do |n|
     options[:iterations] = n
   end
 
@@ -142,7 +228,8 @@ OptionParser.new do |opts|
     options[:base_branch] = branch
   end
 
-  opts.on('-p', '--pattern PATTERN', 'Pattern to match spec files (default: _spec.rb$)') do |pattern|
+  opts.on('-p', '--pattern PATTERN',
+          "Pattern to match spec files (default: #{TerminateFlakyTest::DEFAULT_SPEC_PATTERN})") do |pattern|
     options[:spec_pattern] = pattern
   end
 
