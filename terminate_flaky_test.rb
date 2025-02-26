@@ -8,7 +8,7 @@ require 'optparse'
 
 class TerminateFlakyTest
   DEFAULT_ITERATIONS = 5
-  DEFAULT_SPEC_PATTERN = '_spec\.rb$'
+  DEFAULT_SPEC_PATTERN = '_spec.rb'
 
   def initialize(options = {})
     @iterations = options[:iterations] || DEFAULT_ITERATIONS
@@ -67,12 +67,12 @@ class TerminateFlakyTest
 
     @iterations.times do |i|
       print "  Run #{i + 1}/#{@iterations}: "
-      start_time = Time.zone.now
+      start_time = Time.now
 
       cmd = "bundle exec rspec #{spec_file} --format documentation"
       _, stderr, status = Open3.capture3(cmd)
 
-      duration = Time.zone.now - start_time
+      duration = Time.now - start_time
       success = status.success?
 
       print success ? '✓' : '✗'
@@ -96,7 +96,7 @@ class TerminateFlakyTest
   end
 
   def save_results(results)
-    timestamp = Time.zone.now.strftime('%Y%m%d_%H%M%S')
+    timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
     filename = File.join(@output_dir, "flaky_test_results_#{timestamp}.json")
 
     File.write(filename, JSON.pretty_generate(results))
