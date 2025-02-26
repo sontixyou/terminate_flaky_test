@@ -1,4 +1,4 @@
-# Flaky Test Detector
+# Flaky Test Terminator
 
 A Ruby script to detect flaky tests in your RSpec test suite by running tests multiple times and analyzing the results.
 
