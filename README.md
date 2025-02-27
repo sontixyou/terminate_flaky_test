@@ -41,6 +41,13 @@ Run each test 10 times, comparing against the 'develop' branch:
 ruby flaky_test_detector.rb -i 10 -b develop
 ```
 
+Run comparing against the 'main' to 'develop' branch:
+
+```bash
+# diff master...develop
+ruby flaky_test_detector.rb -b master -t develop
+```
+
 Show detailed error output for failing tests:
 
 ```bash
@@ -53,6 +60,7 @@ ruby flaky_test_detector.rb -v
 |--------|-------------|---------|
 | `-i`, `--iterations N` | Number of times to run each test | 5 |
 | `-b`, `--base-branch BRANCH` | Base branch to compare against for finding changed files | main |
+| `-t`, `--target-branch BRANCH` | Target branch to compare against for finding changed files | git branch --show-current |
 | `-p`, `--pattern PATTERN` | Pattern to match spec files | _spec.rb |
 | `-v`, `--verbose` | Show detailed error output for failed runs | false |
 | `-h`, `--help` | Show help message | - |
