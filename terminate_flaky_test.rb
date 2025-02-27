@@ -14,6 +14,7 @@ class TerminateFlakyTest
     @iterations = options[:iterations] || DEFAULT_ITERATIONS
     @spec_pattern = options[:spec_pattern] || DEFAULT_SPEC_PATTERN
     @base_branch = options[:base_branch] || 'main'
+    @target_branch = options[:target_branch] || current_branch
     @verbose = options[:verbose] || false
   end
 
@@ -63,12 +64,21 @@ class TerminateFlakyTest
   private
 
   def find_changed_spec_files
-    cmd = "git diff --name-only #{@base_branch} -- '**/*#{@spec_pattern}'"
+    cmd = "git diff --name-only #{@base_branch}...#{@target_branch} -- '**/*#{@spec_pattern}'"
     stdout, stderr, status = Open3.capture3(cmd)
 
     raise "Error getting changed files: #{stderr}" unless status.success?
 
     stdout.split("\n").select { |file| File.exist?(file) }
+  end
+
+  def current_branch
+    cmd = 'git branch --show-current'
+    stdout, stderr, status = Open3.capture3(cmd)
+
+    raise "Error getting current branch: #{stderr}" unless status.success?
+
+    stdout.strip
   end
 
   def run_spec_multiple_times(spec_file)
@@ -198,6 +208,10 @@ OptionParser.new do |opts|
 
   opts.on('-b', '--base-branch BRANCH', 'Base branch to compare against (default: main)') do |branch|
     options[:base_branch] = branch
+  end
+
+  opts.on('-t', '--target-branch BRANCH', 'Target branch to compare against (default: current branch') do |branch|
+    options[:target_branch] = branch
   end
 
   opts.on('-p', '--pattern PATTERN',
